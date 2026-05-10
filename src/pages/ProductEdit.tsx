@@ -1,39 +1,128 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useData } from '../context/DataContext';
 import { formatPrice } from '../data/mock';
-import type { Product, ProductCategory } from '../types';
-
-const CATEGORIES: { value: ProductCategory; label: string }[] = [
-  { value: 'model',     label: 'Mô hình' },
-  { value: 'accessory', label: 'Phụ kiện' },
-  { value: 'filament',  label: 'Vật liệu' },
-  { value: 'service',   label: 'Dịch vụ' },
-];
+import {
+  productApi,
+  type AdminProduct,
+  type UpdateProductRequest,
+  type ProductBadge,
+} from '../api/product';
+import { categoryApi, type Category } from '../api/category';
+import { ApiError } from '../api/client';
 
 export const ProductEdit = () => {
-  const { id } = useParams<{ id: string }>();
+  const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
-  const { products, setProducts } = useData();
 
-  const original = products.find((p) => p.id === id);
-  const [form, setForm] = useState<Product | null>(original ? { ...original } : null);
+  const [original, setOriginal] = useState<AdminProduct | null>(null);
+  const [form, setForm] = useState<AdminProduct | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
 
-  if (!form) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const [tagInput, setTagInput] = useState('');
+  const [tagBusy, setTagBusy]   = useState<string | null>(null); // tag name in flight
+
+  // Load product + categories
+  useEffect(() => {
+    if (!slug) return;
+    let cancelled = false;
+    setLoading(true); setError(null);
+    Promise.all([productApi.getBySlug(slug), categoryApi.list()])
+      .then(([p, cats]) => {
+        if (cancelled) return;
+        setOriginal(p);
+        setForm(p);
+        setCategories(cats);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof ApiError ? err.message : 'Không tải được sản phẩm');
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [slug]);
+
+  if (loading) return <p className="adm-muted">⏳ Đang tải...</p>;
+
+  if (!form || !original) {
     return (
       <div>
-        <p className="adm-muted" style={{ marginBottom: '1rem' }}>Không tìm thấy sản phẩm.</p>
+        <p className="adm-muted" style={{ marginBottom: '1rem' }}>{error ?? 'Không tìm thấy sản phẩm.'}</p>
         <button className="adm-btn adm-btn-ghost" onClick={() => navigate('/products')}>← Quay lại</button>
       </div>
     );
   }
 
-  const set = <K extends keyof Product>(field: K, value: Product[K]) =>
+  const set = <K extends keyof AdminProduct>(field: K, value: AdminProduct[K]) =>
     setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
 
-  const handleSave = () => {
-    setProducts((prev) => prev.map((p) => (p.id === form.id ? form : p)));
-    navigate('/products');
+  // Build partial diff vs original to send minimal payload
+  const buildPatch = (): UpdateProductRequest => {
+    const patch: UpdateProductRequest = {};
+    if (form.name !== original.name)                 patch.name = form.name;
+    if (form.categoryId !== original.categoryId)     patch.categoryId = form.categoryId;
+    if (form.price !== original.price)               patch.price = form.price;
+    if (form.oldPrice !== original.oldPrice)         patch.oldPrice = form.oldPrice;
+    if (form.emoji !== original.emoji)               patch.emoji = form.emoji;
+    if (form.badge !== original.badge)               patch.badge = form.badge;
+    if (form.description !== original.description)   patch.description = form.description;
+    if (form.longDescription !== original.longDescription) patch.longDescription = form.longDescription ?? '';
+    if (form.material !== original.material)         patch.material = form.material ?? '';
+    if (form.dimensions !== original.dimensions)     patch.dimensions = form.dimensions ?? '';
+    if (form.inStock !== original.inStock)           patch.inStock = form.inStock;
+    if (form.videoUrl !== original.videoUrl)         patch.videoUrl = form.videoUrl ?? '';
+    if (form.isActive !== original.isActive)         patch.isActive = form.isActive;
+    return patch;
+  };
+
+  const handleSave = async () => {
+    const patch = buildPatch();
+    if (Object.keys(patch).length === 0) {
+      navigate('/products');
+      return;
+    }
+    setSaving(true); setError(null);
+    try {
+      const updated = await productApi.update(form.id, patch);
+      setOriginal(updated);
+      setForm(updated);
+      navigate('/products');
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Lưu thất bại');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddTag = async () => {
+    const tag = tagInput.trim();
+    if (!tag) return;
+    setTagBusy(tag); setError(null);
+    try {
+      const updated = await productApi.addTag(form.id, tag);
+      setOriginal(updated);
+      setForm((prev) => prev ? { ...prev, tags: updated.tags } : prev);
+      setTagInput('');
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Thêm tag thất bại');
+    } finally {
+      setTagBusy(null);
+    }
+  };
+
+  const handleDeleteTag = async (tag: string) => {
+    setTagBusy(tag); setError(null);
+    try {
+      const updated = await productApi.deleteTag(form.id, tag);
+      setOriginal(updated);
+      setForm((prev) => prev ? { ...prev, tags: updated.tags } : prev);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Xóa tag thất bại');
+    } finally {
+      setTagBusy(null);
+    }
   };
 
   return (
@@ -43,43 +132,52 @@ export const ProductEdit = () => {
           <button className="adm-btn adm-btn-ghost adm-btn-sm" onClick={() => navigate('/products')}>← Quay lại</button>
           <div>
             <h2>Chỉnh sửa sản phẩm</h2>
-            <p className="adm-page-sub">{original?.name}</p>
+            <p className="adm-page-sub">{original.name}</p>
           </div>
         </div>
-        <button className="adm-btn adm-btn-primary" onClick={handleSave}>💾 Lưu thay đổi</button>
+        <button className="adm-btn adm-btn-primary" onClick={handleSave} disabled={saving}>
+          {saving ? 'Đang lưu...' : '💾 Lưu thay đổi'}
+        </button>
       </div>
 
+      {error && <div className="adm-alert adm-alert-error" style={{ marginBottom: '1rem' }}>⚠️ {error}</div>}
+
       <div className="adm-edit-grid">
-        {/* Left: form cards */}
         <div className="adm-edit-main">
           {/* Basic info */}
           <div className="adm-card" style={{ marginBottom: '1.25rem' }}>
             <div className="adm-card-header"><h3>Thông tin cơ bản</h3></div>
             <div className="adm-edit-form-body">
               <div className="adm-form-grid">
-                <div className="adm-form-field full">
-                  <label>Tên sản phẩm *</label>
-                  <input value={form.name} onChange={(e) => set('name', e.target.value)} />
+                <div className="adm-form-field">
+                  <label>Slug <span className="adm-muted adm-small">(không sửa được — BE từ chối)</span></label>
+                  <input className="adm-input-readonly" value={form.slug} readOnly />
                 </div>
                 <div className="adm-form-field">
                   <label>Emoji</label>
                   <input value={form.emoji} onChange={(e) => set('emoji', e.target.value)} />
                 </div>
+                <div className="adm-form-field full">
+                  <label>Tên sản phẩm *</label>
+                  <input value={form.name} onChange={(e) => set('name', e.target.value)} />
+                </div>
                 <div className="adm-form-field">
-                  <label>Danh mục</label>
+                  <label>Danh mục *</label>
                   <select
-                    value={form.category}
+                    value={form.categoryId}
                     onChange={(e) => {
-                      const cat = CATEGORIES.find((c) => c.value === e.target.value);
-                      setForm((prev) =>
-                        prev
-                          ? { ...prev, category: e.target.value as ProductCategory, categoryLabel: cat?.label ?? '' }
-                          : prev
-                      );
+                      const cat = categories.find((c) => c.id === e.target.value);
+                      setForm((prev) => prev ? {
+                        ...prev,
+                        categoryId: e.target.value,
+                        categorySlug:    cat?.slug   ?? prev.categorySlug,
+                        categoryNameVi:  cat?.nameVi ?? prev.categoryNameVi,
+                        categoryNameEn:  cat?.nameEn ?? prev.categoryNameEn,
+                      } : prev);
                     }}
                   >
-                    {CATEGORIES.map((c) => (
-                      <option key={c.value} value={c.value}>{c.label}</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.iconEmoji ?? ''} {c.nameVi}</option>
                     ))}
                   </select>
                 </div>
@@ -96,7 +194,7 @@ export const ProductEdit = () => {
                   <input
                     type="number"
                     value={form.oldPrice ?? ''}
-                    onChange={(e) => set('oldPrice', e.target.value ? Number(e.target.value) : undefined)}
+                    onChange={(e) => set('oldPrice', e.target.value ? Number(e.target.value) : null)}
                     placeholder="Để trống nếu không có"
                   />
                 </div>
@@ -104,12 +202,12 @@ export const ProductEdit = () => {
                   <label>Badge</label>
                   <select
                     value={form.badge ?? ''}
-                    onChange={(e) => set('badge', (e.target.value || undefined) as Product['badge'])}
+                    onChange={(e) => set('badge', (e.target.value || null) as ProductBadge | null)}
                   >
                     <option value="">Không có</option>
-                    <option value="new">New</option>
-                    <option value="hot">Hot</option>
-                    <option value="sale">Sale</option>
+                    <option value="NEW">NEW</option>
+                    <option value="HOT">HOT</option>
+                    <option value="SALE">SALE</option>
                   </select>
                 </div>
                 <div className="adm-form-field">
@@ -122,12 +220,30 @@ export const ProductEdit = () => {
                     <option value="false">Hết hàng</option>
                   </select>
                 </div>
+                <div className="adm-form-field">
+                  <label>Hiển thị (isActive)</label>
+                  <select
+                    value={form.isActive ? 'true' : 'false'}
+                    onChange={(e) => set('isActive', e.target.value === 'true')}
+                  >
+                    <option value="true">Public</option>
+                    <option value="false">Ẩn</option>
+                  </select>
+                </div>
                 <div className="adm-form-field full">
-                  <label>Mô tả</label>
+                  <label>Mô tả ngắn</label>
                   <textarea
                     rows={3}
                     value={form.description}
                     onChange={(e) => set('description', e.target.value)}
+                  />
+                </div>
+                <div className="adm-form-field full">
+                  <label>Mô tả dài</label>
+                  <textarea
+                    rows={4}
+                    value={form.longDescription ?? ''}
+                    onChange={(e) => set('longDescription', e.target.value || null)}
                   />
                 </div>
               </div>
@@ -135,7 +251,7 @@ export const ProductEdit = () => {
           </div>
 
           {/* Technical details */}
-          <div className="adm-card">
+          <div className="adm-card" style={{ marginBottom: '1.25rem' }}>
             <div className="adm-card-header"><h3>Chi tiết kỹ thuật</h3></div>
             <div className="adm-edit-form-body">
               <div className="adm-form-grid">
@@ -143,7 +259,7 @@ export const ProductEdit = () => {
                   <label>Chất liệu</label>
                   <input
                     value={form.material ?? ''}
-                    onChange={(e) => set('material', e.target.value || undefined)}
+                    onChange={(e) => set('material', e.target.value || null)}
                     placeholder="VD: PLA 1.75mm"
                   />
                 </div>
@@ -151,46 +267,72 @@ export const ProductEdit = () => {
                   <label>Kích thước</label>
                   <input
                     value={form.dimensions ?? ''}
-                    onChange={(e) => set('dimensions', e.target.value || undefined)}
+                    onChange={(e) => set('dimensions', e.target.value || null)}
                     placeholder="VD: 15 × 20 × 25 cm"
                   />
                 </div>
-                <div className="adm-form-field">
-                  <label>Đánh giá (0 – 5)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={5}
-                    step={0.1}
-                    value={form.rating}
-                    onChange={(e) => set('rating', Number(e.target.value))}
-                  />
-                </div>
-                <div className="adm-form-field">
-                  <label>Số lượt đánh giá</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={form.reviewCount}
-                    onChange={(e) => set('reviewCount', Number(e.target.value))}
-                  />
-                </div>
                 <div className="adm-form-field full">
-                  <label>Tags (phân cách bằng dấu phẩy)</label>
+                  <label>Video URL</label>
                   <input
-                    value={form.tags.join(', ')}
-                    onChange={(e) =>
-                      set('tags', e.target.value.split(',').map((t) => t.trim()).filter(Boolean))
-                    }
-                    placeholder="best-seller, fantasy, new-arrivals..."
+                    value={form.videoUrl ?? ''}
+                    onChange={(e) => set('videoUrl', e.target.value || null)}
+                    placeholder="https://..."
                   />
                 </div>
+                <div className="adm-form-field">
+                  <label>Đánh giá <span className="adm-muted adm-small">(read-only — tính từ reviews)</span></label>
+                  <input className="adm-input-readonly" value={Number(form.rating).toFixed(1)} readOnly />
+                </div>
+                <div className="adm-form-field">
+                  <label>Số lượt đánh giá <span className="adm-muted adm-small">(read-only)</span></label>
+                  <input className="adm-input-readonly" value={form.reviewCount} readOnly />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div className="adm-card">
+            <div className="adm-card-header"><h3>Tags</h3></div>
+            <div className="adm-edit-form-body">
+              <div style={{ display: 'flex', gap: '.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                {form.tags.length === 0 && <span className="adm-muted adm-small">Chưa có tag nào.</span>}
+                {form.tags.map((tag) => (
+                  <span key={tag} className="adm-tag" style={{ display: 'inline-flex', gap: '.4rem', alignItems: 'center' }}>
+                    {tag}
+                    <button
+                      type="button"
+                      className="adm-btn adm-btn-sm adm-btn-danger-ghost"
+                      onClick={() => handleDeleteTag(tag)}
+                      disabled={tagBusy === tag}
+                      style={{ padding: '0 .35rem', lineHeight: 1 }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '.5rem' }}>
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  placeholder="best-seller, fantasy, new-arrivals..."
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  className="adm-btn adm-btn-primary adm-btn-sm"
+                  onClick={handleAddTag}
+                  disabled={!tagInput.trim() || tagBusy !== null}
+                >
+                  {tagBusy === tagInput.trim() ? 'Đang thêm...' : '+ Thêm tag'}
+                </button>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right: live preview */}
+        {/* Live preview */}
         <div className="adm-edit-sidebar">
           <div className="adm-card adm-edit-preview-card">
             <div className="adm-card-header"><h3>Xem trước</h3></div>
@@ -198,9 +340,9 @@ export const ProductEdit = () => {
               <span className="adm-edit-preview-emoji">{form.emoji}</span>
               <h4 className="adm-edit-preview-name">{form.name || '—'}</h4>
               <div className="adm-edit-preview-badges">
-                <span className="adm-tag">{form.categoryLabel}</span>
+                <span className="adm-tag">{form.categoryNameVi}</span>
                 {form.badge && (
-                  <span className={`adm-badge badge-${form.badge}`}>{form.badge.toUpperCase()}</span>
+                  <span className={`adm-badge badge-${form.badge.toLowerCase()}`}>{form.badge}</span>
                 )}
                 <span className={`adm-badge ${form.inStock ? 'badge-success' : 'badge-danger'}`}>
                   {form.inStock ? 'Còn hàng' : 'Hết hàng'}
@@ -219,12 +361,10 @@ export const ProductEdit = () => {
               {form.dimensions && (
                 <p className="adm-small"><strong>Kích thước:</strong> {form.dimensions}</p>
               )}
-              <p className="adm-small">⭐ {form.rating} ({form.reviewCount} đánh giá)</p>
+              <p className="adm-small">⭐ {Number(form.rating).toFixed(1)} ({form.reviewCount} đánh giá)</p>
               {form.tags.length > 0 && (
                 <div className="adm-edit-preview-tags">
-                  {form.tags.map((t) => (
-                    <span key={t} className="adm-tag">{t}</span>
-                  ))}
+                  {form.tags.map((t) => <span key={t} className="adm-tag">{t}</span>)}
                 </div>
               )}
             </div>

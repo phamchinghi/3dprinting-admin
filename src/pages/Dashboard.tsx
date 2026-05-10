@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getOrders, mockProducts, formatPrice } from '../data/mock';
+import { getOrders, formatPrice } from '../data/mock';
 import { adminUserApi } from '../api/adminUser';
+import { productApi, type AdminProduct } from '../api/product';
 import type { Order } from '../types';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -16,14 +17,23 @@ const PAY_LABEL: Record<string, string> = { cod: 'COD', bank: 'Chuyển khoản'
 
 export const Dashboard = () => {
   const orders: Order[] = useMemo(() => getOrders(), []);
-  const [userTotal, setUserTotal] = useState<number | null>(null);
+  const [userTotal, setUserTotal]       = useState<number | null>(null);
+  const [productTotal, setProductTotal] = useState<number | null>(null);
+  const [productSample, setProductSample] = useState<AdminProduct[]>([]);
 
-  // Real user count from BE — fetch with size=1 to get only totalElements
   useEffect(() => {
     let cancelled = false;
     adminUserApi.list({ page: 1, size: 1 })
       .then((res) => { if (!cancelled) setUserTotal(res.totalElements); })
       .catch(() => { if (!cancelled) setUserTotal(0); });
+    // Single fetch: dùng size=100 để đủ data cho chart + lấy totalElements
+    productApi.list({ page: 1, size: 100 })
+      .then((res) => {
+        if (cancelled) return;
+        setProductTotal(res.totalElements);
+        setProductSample(res.items);
+      })
+      .catch(() => { if (!cancelled) { setProductTotal(0); setProductSample([]); } });
     return () => { cancelled = true; };
   }, []);
 
@@ -31,11 +41,11 @@ export const Dashboard = () => {
   const pending     = orders.filter((o) => o.status === 'pending').length;
   const recentOrders = orders.slice(0, 5);
 
-  const categoryCounts = mockProducts.reduce<Record<string, number>>((acc, p) => {
-    acc[p.categoryLabel] = (acc[p.categoryLabel] ?? 0) + 1;
+  const categoryCounts = productSample.reduce<Record<string, number>>((acc, p) => {
+    acc[p.categoryNameVi] = (acc[p.categoryNameVi] ?? 0) + 1;
     return acc;
   }, {});
-  const maxCat = Math.max(...Object.values(categoryCounts));
+  const maxCat = Math.max(1, ...Object.values(categoryCounts));
 
   return (
     <div>
@@ -45,8 +55,8 @@ export const Dashboard = () => {
           <div className="stat-icon">📦</div>
           <div className="stat-body">
             <p className="stat-label">Tổng sản phẩm</p>
-            <p className="stat-value">{mockProducts.length}</p>
-            <p className="stat-sub">4 danh mục</p>
+            <p className="stat-value">{productTotal ?? '—'}</p>
+            <p className="stat-sub">{Object.keys(categoryCounts).length} danh mục (DB thật)</p>
           </div>
         </div>
         <div className="adm-stat-card" style={{ '--accent': '#f59e0b' } as React.CSSProperties}>
