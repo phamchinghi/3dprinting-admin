@@ -1,46 +1,98 @@
-import { useState } from 'react';
-import { getOrders, saveOrders, formatPrice } from '../data/mock';
+import { useEffect, useState } from 'react';
+import { formatPrice } from '../data/mock';
 import { Modal } from '../components/Modal';
-import type { Order, OrderStatus } from '../types';
+import { orderApi, type AdminOrder, type ApiOrderStatus } from '../api/order';
+import { ApiError } from '../api/client';
 
-const STATUS_LABEL: Record<OrderStatus, string> = {
-  pending: 'Chờ xác nhận', confirmed: 'Đã xác nhận',
-  shipped: 'Đang giao', delivered: 'Đã giao',
+const PAGE_SIZE = 20;
+
+const STATUS_LABEL: Record<ApiOrderStatus, string> = {
+  PENDING:   'Chờ xác nhận',
+  CONFIRMED: 'Đã xác nhận',
+  SHIPPED:   'Đang giao',
+  DELIVERED: 'Đã giao',
+  CANCELLED: 'Đã hủy',
 };
-const STATUS_CLS: Record<OrderStatus, string> = {
-  pending: 'badge-warning', confirmed: 'badge-info',
-  shipped: 'badge-primary', delivered: 'badge-success',
+const STATUS_CLS: Record<ApiOrderStatus, string> = {
+  PENDING:   'badge-warning',
+  CONFIRMED: 'badge-info',
+  SHIPPED:   'badge-primary',
+  DELIVERED: 'badge-success',
+  CANCELLED: 'badge-danger',
 };
-const PAY_LABEL: Record<string, string> = { cod: 'COD', bank: 'Chuyển khoản', ewallet: 'Ví điện tử' };
-const STATUSES: OrderStatus[] = ['pending', 'confirmed', 'shipped', 'delivered'];
+const PAY_LABEL: Record<string, string> = { COD: 'COD', BANK: 'Chuyển khoản', EWALLET: 'Ví điện tử' };
+const STATUSES: ApiOrderStatus[] = ['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'];
 
 export const Orders = () => {
-  const [orders, setOrders]     = useState<Order[]>(() => getOrders());
-  const [search, setSearch]     = useState('');
-  const [filterStatus, setFilter] = useState<string>('all');
-  const [viewItem, setViewItem] = useState<Order | null>(null);
-  const [deleteItem, setDelete] = useState<Order | null>(null);
+  const [items, setItems] = useState<AdminOrder[]>([]);
+  const [totalElements, setTotalElements] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [page, setPage] = useState(1);
 
-  const filtered = orders.filter((o) => {
-    const name = `${o.customer.firstName} ${o.customer.lastName}`.toLowerCase();
-    const matchSearch = o.id.toLowerCase().includes(search.toLowerCase()) || name.includes(search.toLowerCase());
-    const matchStatus = filterStatus === 'all' || o.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  const [search, setSearch]     = useState('');                      // client-side filter (orderNumber/name)
+  const [filterStatus, setFilterStatus] = useState<'all' | ApiOrderStatus>('all');
 
-  const handleStatusChange = (id: string, status: OrderStatus) => {
-    const updated = orders.map((o) => o.id === id ? { ...o, status } : o);
-    setOrders(updated);
-    saveOrders(updated);
-    if (viewItem?.id === id) setViewItem((prev) => prev ? { ...prev, status } : prev);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
+
+  const [viewItem, setViewItem] = useState<AdminOrder | null>(null);
+  const [deleteItem, setDeleteItem] = useState<AdminOrder | null>(null);
+  const [busy, setBusy]         = useState(false);
+
+  const reload = () => {
+    setLoading(true); setError(null);
+    orderApi.list({
+      page, size: PAGE_SIZE,
+      status: filterStatus === 'all' ? undefined : filterStatus,
+    })
+      .then((res) => {
+        setItems(res.items);
+        setTotalElements(res.totalElements);
+        setTotalPages(Math.max(1, res.totalPages));
+      })
+      .catch((err) => {
+        setError(err instanceof ApiError ? err.message : 'Không tải được danh sách đơn');
+        setItems([]); setTotalElements(0); setTotalPages(1);
+      })
+      .finally(() => setLoading(false));
   };
 
-  const handleDelete = () => {
+  useEffect(reload, [page, filterStatus]);
+
+  // Client-side search lọc theo orderNumber + customer name (BE chưa có search endpoint cho orders)
+  const filtered = items.filter((o) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const name = `${o.shipping.firstName} ${o.shipping.lastName}`.toLowerCase();
+    return o.orderNumber.toLowerCase().includes(q) || name.includes(q);
+  });
+
+  const handleStatusChange = async (id: string, status: ApiOrderStatus) => {
+    setBusy(true); setError(null);
+    try {
+      const updated = await orderApi.updateStatus(id, status);
+      setItems((prev) => prev.map((o) => o.id === id ? updated : o));
+      if (viewItem?.id === id) setViewItem(updated);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Cập nhật trạng thái thất bại');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
     if (!deleteItem) return;
-    const updated = orders.filter((o) => o.id !== deleteItem.id);
-    setOrders(updated);
-    saveOrders(updated);
-    setDelete(null);
+    setBusy(true); setError(null);
+    try {
+      await orderApi.delete(deleteItem.id);
+      setDeleteItem(null);
+      if (items.length === 1 && page > 1) setPage((p) => p - 1);
+      else reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Xóa đơn thất bại');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -48,26 +100,34 @@ export const Orders = () => {
       <div className="adm-page-header">
         <div>
           <h2>Đơn hàng</h2>
-          <p className="adm-page-sub">{orders.length} đơn từ website · Dữ liệu thực từ localStorage</p>
+          <p className="adm-page-sub">{totalElements} đơn từ DB · Cập nhật trạng thái real-time</p>
         </div>
       </div>
+
+      {error && <div className="adm-alert adm-alert-error" style={{ marginBottom: '1rem' }}>⚠️ {error}</div>}
 
       <div className="adm-card">
         <div className="adm-toolbar">
           <input
             className="adm-search"
-            placeholder="🔍 Tìm mã đơn hoặc tên khách..."
+            placeholder="🔍 Tìm orderNumber hoặc tên khách (client-side)..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <select className="adm-select" value={filterStatus} onChange={(e) => setFilter(e.target.value)}>
+          <select
+            className="adm-select"
+            value={filterStatus}
+            onChange={(e) => { setFilterStatus(e.target.value as 'all' | ApiOrderStatus); setPage(1); }}
+          >
             <option value="all">Tất cả trạng thái</option>
             {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
           </select>
-          <span className="adm-count">{filtered.length} / {orders.length}</span>
+          <span className="adm-count">{filtered.length} / {totalElements}</span>
         </div>
 
-        {orders.length === 0 ? (
+        {loading ? (
+          <div className="adm-empty"><span>⏳</span><p>Đang tải...</p></div>
+        ) : totalElements === 0 ? (
           <div className="adm-empty">
             <span>📭</span>
             <p>Chưa có đơn hàng. Thử đặt hàng trên website TiNi 3D Store trước!</p>
@@ -90,21 +150,20 @@ export const Orders = () => {
               <tbody>
                 {filtered.map((o) => (
                   <tr key={o.id}>
-                    <td><code className="adm-code">{o.id}</code></td>
+                    <td><code className="adm-code">{o.orderNumber}</code></td>
                     <td>
-                      <strong>{o.customer.firstName} {o.customer.lastName}</strong>
-                      <div className="adm-muted adm-small">{o.customer.phone}</div>
+                      <strong>{o.shipping.firstName} {o.shipping.lastName}</strong>
+                      <div className="adm-muted adm-small">{o.shipping.phone}</div>
                     </td>
-                    <td>
-                      <span className="adm-tag">{o.items.length} sp</span>
-                    </td>
+                    <td><span className="adm-tag">{o.items.length} sp</span></td>
                     <td><strong>{formatPrice(o.total)}</strong></td>
                     <td>{PAY_LABEL[o.paymentMethod]}</td>
                     <td>
                       <select
                         className={`adm-status-select ${STATUS_CLS[o.status]}`}
                         value={o.status}
-                        onChange={(e) => handleStatusChange(o.id, e.target.value as OrderStatus)}
+                        disabled={busy}
+                        onChange={(e) => handleStatusChange(o.id, e.target.value as ApiOrderStatus)}
                       >
                         {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                       </select>
@@ -113,7 +172,7 @@ export const Orders = () => {
                     <td>
                       <div className="adm-actions">
                         <button className="adm-btn adm-btn-sm adm-btn-ghost" onClick={() => setViewItem(o)}>👁️ Chi tiết</button>
-                        <button className="adm-btn adm-btn-sm adm-btn-danger-ghost" onClick={() => setDelete(o)}>🗑️</button>
+                        <button className="adm-btn adm-btn-sm adm-btn-danger-ghost" onClick={() => setDeleteItem(o)}>🗑️</button>
                       </div>
                     </td>
                   </tr>
@@ -122,13 +181,21 @@ export const Orders = () => {
             </table>
           </div>
         )}
+
+        {totalPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '.5rem', padding: '1rem' }}>
+            <button className="adm-btn adm-btn-ghost adm-btn-sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>‹</button>
+            <span className="adm-muted" style={{ alignSelf: 'center' }}>Trang {page} / {totalPages}</span>
+            <button className="adm-btn adm-btn-ghost adm-btn-sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>›</button>
+          </div>
+        )}
       </div>
 
       {/* Detail Modal */}
       <Modal
         open={!!viewItem}
         onClose={() => setViewItem(null)}
-        title={`Chi tiết đơn hàng — ${viewItem?.id ?? ''}`}
+        title={`Chi tiết đơn hàng — ${viewItem?.orderNumber ?? ''}`}
         size="lg"
       >
         {viewItem && (
@@ -136,14 +203,17 @@ export const Orders = () => {
             <div className="adm-detail-grid">
               <div>
                 <p className="adm-detail-label">Khách hàng</p>
-                <p><strong>{viewItem.customer.firstName} {viewItem.customer.lastName}</strong></p>
-                <p className="adm-muted">{viewItem.customer.phone}</p>
-                <p className="adm-muted">{viewItem.customer.email}</p>
+                <p><strong>{viewItem.shipping.firstName} {viewItem.shipping.lastName}</strong></p>
+                <p className="adm-muted">{viewItem.shipping.phone}</p>
+                {viewItem.shipping.email && <p className="adm-muted">{viewItem.shipping.email}</p>}
+                {viewItem.userId
+                  ? <p className="adm-small">User: <code>{viewItem.userId}</code></p>
+                  : <p className="adm-small adm-muted">Guest checkout (no user)</p>}
               </div>
               <div>
                 <p className="adm-detail-label">Địa chỉ giao hàng</p>
-                <p>{viewItem.customer.address}</p>
-                <p className="adm-muted">{viewItem.customer.district}, {viewItem.customer.province}</p>
+                <p>{viewItem.shipping.address}</p>
+                <p className="adm-muted">{viewItem.shipping.district ? viewItem.shipping.district + ', ' : ''}{viewItem.shipping.province}</p>
               </div>
               <div>
                 <p className="adm-detail-label">Thanh toán</p>
@@ -155,7 +225,8 @@ export const Orders = () => {
                 <select
                   className={`adm-status-select ${STATUS_CLS[viewItem.status]}`}
                   value={viewItem.status}
-                  onChange={(e) => handleStatusChange(viewItem.id, e.target.value as OrderStatus)}
+                  disabled={busy}
+                  onChange={(e) => handleStatusChange(viewItem.id, e.target.value as ApiOrderStatus)}
                 >
                   {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                 </select>
@@ -164,22 +235,25 @@ export const Orders = () => {
 
             <div className="adm-detail-items">
               <p className="adm-detail-label">Sản phẩm</p>
-              {viewItem.items.map(({ product, quantity }) => (
-                <div key={product.id} className="adm-order-item-row">
-                  <span>{product.emoji}</span>
-                  <span className="flex-1">{product.name}</span>
-                  <span className="adm-muted">× {quantity}</span>
-                  <strong>{formatPrice(product.price * quantity)}</strong>
+              {viewItem.items.map((it) => (
+                <div key={it.id} className="adm-order-item-row">
+                  <span>{it.productEmoji ?? '📦'}</span>
+                  <span className="flex-1">
+                    {it.productName}
+                    {!it.productId && <span className="adm-muted adm-small"> (đã xóa)</span>}
+                  </span>
+                  <span className="adm-muted">× {it.quantity}</span>
+                  <strong>{formatPrice(it.subtotal)}</strong>
                 </div>
               ))}
               <div className="adm-order-totals">
                 <div className="total-row"><span>Tạm tính</span><span>{formatPrice(viewItem.subtotal)}</span></div>
-                <div className="total-row"><span>Phí vận chuyển</span><span>{formatPrice(viewItem.shipping)}</span></div>
+                <div className="total-row"><span>Phí vận chuyển</span><span>{formatPrice(viewItem.shippingFee)}</span></div>
                 <div className="total-row total-final"><span>Tổng cộng</span><strong>{formatPrice(viewItem.total)}</strong></div>
               </div>
             </div>
-            {viewItem.customer.note && (
-              <div className="adm-note"><strong>Ghi chú:</strong> {viewItem.customer.note}</div>
+            {viewItem.note && (
+              <div className="adm-note"><strong>Ghi chú:</strong> {viewItem.note}</div>
             )}
           </div>
         )}
@@ -188,18 +262,20 @@ export const Orders = () => {
       {/* Delete Confirm */}
       <Modal
         open={!!deleteItem}
-        onClose={() => setDelete(null)}
+        onClose={() => !busy && setDeleteItem(null)}
         title="Xác nhận xóa đơn hàng"
         size="sm"
         footer={
           <div className="modal-footer-actions">
-            <button className="adm-btn adm-btn-ghost" onClick={() => setDelete(null)}>Hủy</button>
-            <button className="adm-btn adm-btn-danger" onClick={handleDelete}>Xóa đơn hàng</button>
+            <button className="adm-btn adm-btn-ghost" onClick={() => setDeleteItem(null)} disabled={busy}>Hủy</button>
+            <button className="adm-btn adm-btn-danger" onClick={handleDelete} disabled={busy}>
+              {busy ? 'Đang xóa...' : 'Xóa đơn hàng'}
+            </button>
           </div>
         }
       >
-        <p>Bạn có chắc muốn xóa đơn hàng <strong>{deleteItem?.id}</strong>?</p>
-        <p className="adm-muted">Thao tác này không thể hoàn tác và sẽ xóa dữ liệu khỏi localStorage.</p>
+        <p>Bạn có chắc muốn xóa đơn hàng <strong>{deleteItem?.orderNumber}</strong>?</p>
+        <p className="adm-muted">Thao tác này không thể hoàn tác. order_shipping + order_items CASCADE.</p>
       </Modal>
     </div>
   );

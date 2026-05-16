@@ -1,32 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getOrders, formatPrice } from '../data/mock';
+import { formatPrice } from '../data/mock';
 import { adminUserApi } from '../api/adminUser';
 import { productApi, type AdminProduct } from '../api/product';
-import type { Order } from '../types';
+import { orderApi, type AdminOrder, type ApiOrderStatus, type ApiPaymentMethod } from '../api/order';
 
-const STATUS_LABEL: Record<string, string> = {
-  pending: 'Chờ xác nhận', confirmed: 'Đã xác nhận',
-  shipped: 'Đang giao', delivered: 'Đã giao',
+const STATUS_LABEL: Record<ApiOrderStatus, string> = {
+  PENDING: 'Chờ xác nhận', CONFIRMED: 'Đã xác nhận',
+  SHIPPED: 'Đang giao',     DELIVERED: 'Đã giao',
+  CANCELLED: 'Đã hủy',
 };
-const STATUS_CLS: Record<string, string> = {
-  pending: 'badge-warning', confirmed: 'badge-info',
-  shipped: 'badge-primary', delivered: 'badge-success',
+const STATUS_CLS: Record<ApiOrderStatus, string> = {
+  PENDING: 'badge-warning', CONFIRMED: 'badge-info',
+  SHIPPED: 'badge-primary', DELIVERED: 'badge-success',
+  CANCELLED: 'badge-danger',
 };
-const PAY_LABEL: Record<string, string> = { cod: 'COD', bank: 'Chuyển khoản', ewallet: 'Ví điện tử' };
+const PAY_LABEL: Record<ApiPaymentMethod, string> = { COD: 'COD', BANK: 'Chuyển khoản', EWALLET: 'Ví điện tử' };
 
 export const Dashboard = () => {
-  const orders: Order[] = useMemo(() => getOrders(), []);
   const [userTotal, setUserTotal]       = useState<number | null>(null);
   const [productTotal, setProductTotal] = useState<number | null>(null);
   const [productSample, setProductSample] = useState<AdminProduct[]>([]);
+  const [orderTotal, setOrderTotal]     = useState<number | null>(null);
+  const [orderSample, setOrderSample]   = useState<AdminOrder[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     adminUserApi.list({ page: 1, size: 1 })
       .then((res) => { if (!cancelled) setUserTotal(res.totalElements); })
       .catch(() => { if (!cancelled) setUserTotal(0); });
-    // Single fetch: dùng size=100 để đủ data cho chart + lấy totalElements
     productApi.list({ page: 1, size: 100 })
       .then((res) => {
         if (cancelled) return;
@@ -34,12 +36,23 @@ export const Dashboard = () => {
         setProductSample(res.items);
       })
       .catch(() => { if (!cancelled) { setProductTotal(0); setProductSample([]); } });
+    // Orders: lấy size=100 để cover revenue + recent + status breakdown
+    orderApi.list({ page: 1, size: 100 })
+      .then((res) => {
+        if (cancelled) return;
+        setOrderTotal(res.totalElements);
+        setOrderSample(res.items);
+      })
+      .catch(() => { if (!cancelled) { setOrderTotal(0); setOrderSample([]); } });
     return () => { cancelled = true; };
   }, []);
 
-  const revenue     = orders.reduce((s, o) => s + o.total, 0);
-  const pending     = orders.filter((o) => o.status === 'pending').length;
-  const recentOrders = orders.slice(0, 5);
+  // Doanh thu chỉ tính những đơn không bị CANCELLED
+  const revenue = orderSample
+    .filter((o) => o.status !== 'CANCELLED')
+    .reduce((s, o) => s + o.total, 0);
+  const pending = orderSample.filter((o) => o.status === 'PENDING').length;
+  const recentOrders = orderSample.slice(0, 5);
 
   const categoryCounts = productSample.reduce<Record<string, number>>((acc, p) => {
     acc[p.categoryNameVi] = (acc[p.categoryNameVi] ?? 0) + 1;
@@ -64,7 +77,7 @@ export const Dashboard = () => {
           <div className="stat-body">
             <p className="stat-label">Đơn chờ xử lý</p>
             <p className="stat-value">{pending}</p>
-            <p className="stat-sub">{orders.length} tổng đơn</p>
+            <p className="stat-sub">{orderTotal ?? '—'} tổng đơn</p>
           </div>
         </div>
         <div className="adm-stat-card" style={{ '--accent': '#2faa6b' } as React.CSSProperties}>
@@ -79,8 +92,8 @@ export const Dashboard = () => {
           <div className="stat-icon">💰</div>
           <div className="stat-body">
             <p className="stat-label">Doanh thu</p>
-            <p className="stat-value">{orders.length > 0 ? formatPrice(revenue) : '—'}</p>
-            <p className="stat-sub">Từ tất cả đơn hàng</p>
+            <p className="stat-value">{orderSample.length > 0 ? formatPrice(revenue) : '—'}</p>
+            <p className="stat-sub">Trừ đơn đã hủy</p>
           </div>
         </div>
       </div>
@@ -112,8 +125,8 @@ export const Dashboard = () => {
                 <tbody>
                   {recentOrders.map((o) => (
                     <tr key={o.id}>
-                      <td><code>{o.id}</code></td>
-                      <td>{o.customer.firstName} {o.customer.lastName}</td>
+                      <td><code>{o.orderNumber}</code></td>
+                      <td>{o.shipping.firstName} {o.shipping.lastName}</td>
                       <td><strong>{formatPrice(o.total)}</strong></td>
                       <td><span className={`adm-badge ${STATUS_CLS[o.status]}`}>{STATUS_LABEL[o.status]}</span></td>
                       <td>{new Date(o.createdAt).toLocaleDateString('vi-VN')}</td>
@@ -125,7 +138,7 @@ export const Dashboard = () => {
           )}
         </div>
 
-        {/* Category breakdown */}
+        {/* Category breakdown + status summary */}
         <div className="adm-card">
           <div className="adm-card-header">
             <h3>Sản phẩm theo danh mục</h3>
@@ -147,8 +160,8 @@ export const Dashboard = () => {
             <h3>Đơn hàng theo trạng thái</h3>
           </div>
           <div className="adm-status-summary">
-            {(['pending', 'confirmed', 'shipped', 'delivered'] as const).map((s) => {
-              const count = orders.filter((o) => o.status === s).length;
+            {(['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'] as const).map((s) => {
+              const count = orderSample.filter((o) => o.status === s).length;
               return (
                 <div key={s} className="status-row">
                   <span className={`adm-badge ${STATUS_CLS[s]}`}>{STATUS_LABEL[s]}</span>
@@ -159,8 +172,8 @@ export const Dashboard = () => {
             <div className="status-row" style={{ marginTop: '.5rem', borderTop: '1px solid var(--adm-border)', paddingTop: '.5rem' }}>
               <span style={{ fontSize: '.85rem', color: 'var(--adm-text-muted)' }}>Thanh toán</span>
             </div>
-            {(['cod', 'bank', 'ewallet'] as const).map((p) => {
-              const count = orders.filter((o) => o.paymentMethod === p).length;
+            {(['COD', 'BANK', 'EWALLET'] as const).map((p) => {
+              const count = orderSample.filter((o) => o.paymentMethod === p).length;
               return (
                 <div key={p} className="status-row">
                   <span style={{ fontSize: '.875rem' }}>{PAY_LABEL[p]}</span>
