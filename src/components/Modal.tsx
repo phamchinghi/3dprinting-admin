@@ -7,12 +7,17 @@ interface ModalProps {
   children: ReactNode;
   footer?: ReactNode;
   size?: 'sm' | 'md' | 'lg';
+  /** Default true. Set false để khóa overlay-click — buộc user tắt bằng ✕, Hủy, hoặc submit. */
+  closeOnOverlayClick?: boolean;
 }
 
-export const Modal = ({ open, onClose, title, children, footer, size = 'md' }: ModalProps) => {
+export const Modal = ({
+  open, onClose, title, children, footer, size = 'md',
+  closeOnOverlayClick = true,
+}: ModalProps) => {
   if (!open) return null;
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={closeOnOverlayClick ? onClose : undefined}>
       <div className={`modal-box modal-${size}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3 className="modal-title">{title}</h3>

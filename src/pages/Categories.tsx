@@ -169,6 +169,7 @@ export const Categories = () => {
         onClose={() => { setAddOpen(false); setFormError(null); }}
         title="Thêm danh mục mới"
         size="md"
+        closeOnOverlayClick={false}
         footer={
           <div className="modal-footer-actions">
             <button className="adm-btn adm-btn-ghost" onClick={() => { setAddOpen(false); setFormError(null); }}>Hủy</button>

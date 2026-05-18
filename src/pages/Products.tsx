@@ -241,6 +241,7 @@ export const Products = () => {
         onClose={() => !submitting && setAddOpen(false)}
         title="Thêm sản phẩm mới"
         size="md"
+        closeOnOverlayClick={false}
         footer={
           <div className="modal-footer-actions">
             <button className="adm-btn adm-btn-ghost" onClick={() => setAddOpen(false)} disabled={submitting}>Hủy</button>
