@@ -8,6 +8,7 @@ import {
   type ProductBadge,
 } from '../api/product';
 import { categoryApi, type Category } from '../api/category';
+import { uploadApi, UPLOAD_LIMITS } from '../api/upload';
 import { ApiError } from '../api/client';
 
 export const ProductEdit = () => {
@@ -23,6 +24,7 @@ export const ProductEdit = () => {
   const [error, setError]     = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
   const [tagBusy, setTagBusy]   = useState<string | null>(null); // tag name in flight
+  const [videoUploading, setVideoUploading] = useState(false);
 
   // Load product + categories
   useEffect(() => {
@@ -122,6 +124,26 @@ export const ProductEdit = () => {
       setError(e instanceof ApiError ? e.message : 'Xóa tag thất bại');
     } finally {
       setTagBusy(null);
+    }
+  };
+
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';   // reset input để pick lại cùng file vẫn fire
+    if (!file) return;
+    // Client-side size check trước khi gửi (BE cũng check, đây là UX sớm)
+    if (file.size > UPLOAD_LIMITS.video.maxBytes) {
+      setError(`Video vượt giới hạn ${UPLOAD_LIMITS.video.maxLabel}`);
+      return;
+    }
+    setVideoUploading(true); setError(null);
+    try {
+      const res = await uploadApi.video(file);
+      set('videoUrl', res.url);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Upload video thất bại');
+    } finally {
+      setVideoUploading(false);
     }
   };
 
@@ -272,12 +294,28 @@ export const ProductEdit = () => {
                   />
                 </div>
                 <div className="adm-form-field full">
-                  <label>Video URL</label>
-                  <input
-                    value={form.videoUrl ?? ''}
-                    onChange={(e) => set('videoUrl', e.target.value || null)}
-                    placeholder="https://..."
-                  />
+                  <label>Video URL <span className="adm-muted adm-small">(hoặc upload mp4/webm ≤ {UPLOAD_LIMITS.video.maxLabel})</span></label>
+                  <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center' }}>
+                    <input
+                      style={{ flex: 1 }}
+                      value={form.videoUrl ?? ''}
+                      onChange={(e) => set('videoUrl', e.target.value || null)}
+                      placeholder="https://..."
+                    />
+                    <label
+                      className="adm-btn adm-btn-ghost adm-btn-sm"
+                      style={{ cursor: videoUploading ? 'wait' : 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      {videoUploading ? '⏳ Đang upload...' : '📤 Upload'}
+                      <input
+                        type="file"
+                        accept={UPLOAD_LIMITS.video.accept}
+                        hidden
+                        disabled={videoUploading}
+                        onChange={handleVideoUpload}
+                      />
+                    </label>
+                  </div>
                 </div>
                 <div className="adm-form-field">
                   <label>Đánh giá <span className="adm-muted adm-small">(read-only — tính từ reviews)</span></label>
