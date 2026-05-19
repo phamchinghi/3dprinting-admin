@@ -316,6 +316,37 @@ export const ProductEdit = () => {
                       />
                     </label>
                   </div>
+                  {form.videoUrl && (
+                    <div style={{ marginTop: '.75rem', display: 'flex', gap: '.75rem', alignItems: 'flex-start' }}>
+                      {/* Thumbnail preview — `key` ép remount khi URL đổi (vì <video src> thay đổi sau mount đôi khi không reload). */}
+                      <video
+                        key={form.videoUrl}
+                        src={form.videoUrl}
+                        controls
+                        muted
+                        preload="metadata"
+                        style={{
+                          width: 240,
+                          height: 135,
+                          background: '#000',
+                          borderRadius: 6,
+                          objectFit: 'cover',
+                          border: '1px solid var(--adm-border)',
+                        }}
+                      />
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '.35rem' }}>
+                        <span className="adm-small adm-muted" style={{ wordBreak: 'break-all' }}>{form.videoUrl}</span>
+                        <button
+                          type="button"
+                          className="adm-btn adm-btn-sm adm-btn-danger-ghost"
+                          onClick={() => set('videoUrl', null)}
+                          style={{ alignSelf: 'flex-start' }}
+                        >
+                          ✕ Bỏ video
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="adm-form-field">
                   <label>Đánh giá <span className="adm-muted adm-small">(read-only — tính từ reviews)</span></label>
