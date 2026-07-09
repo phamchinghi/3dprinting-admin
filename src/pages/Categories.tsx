@@ -2,14 +2,15 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { categoryApi, type Category, type CreateCategoryRequest } from '../api/category';
+import { useToast } from '../context/ToastContext';
 
 const SLUG_REGEX = /^[a-z0-9-]+$/;
 
 export const Categories = () => {
   const navigate = useNavigate();
+  const toast = useToast();
   const [items, setItems]       = useState<Category[]>([]);
   const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState<string | null>(null);
   const [search, setSearch]     = useState('');
   const [addOpen, setAddOpen]   = useState(false);
   const [deleteItem, setDelete] = useState<Category | null>(null);
@@ -23,17 +24,16 @@ export const Categories = () => {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
       const list = await categoryApi.list();
       setItems(list);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không tải được danh mục');
+      toast.error(err instanceof Error ? err.message : 'Không tải được danh mục');
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -47,7 +47,8 @@ export const Categories = () => {
   const handleAdd = async () => {
     setFormError(null);
     if (!form.slug || !SLUG_REGEX.test(form.slug)) {
-      setFormError('Slug chỉ chứa chữ thường, số và dấu gạch ngang'); return;
+      const msg = 'Slug chỉ chứa chữ thường, số và dấu gạch ngang';
+      setFormError(msg); return;
     }
     if (!form.nameVi.trim() || !form.nameEn.trim()) {
       setFormError('Tên VI và EN bắt buộc'); return;
@@ -64,8 +65,11 @@ export const Categories = () => {
       setAddOpen(false);
       setForm({ slug: '', nameVi: '', nameEn: '', iconEmoji: '', sortOrder: 0 });
       reload();
+      toast.success(`Đã thêm danh mục "${form.nameVi}"`);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Không tạo được danh mục');
+      const msg = err instanceof Error ? err.message : 'Không tạo được danh mục';
+      setFormError(msg);
+      toast.error(msg);
     } finally {
       setAdding(false);
     }
@@ -73,12 +77,14 @@ export const Categories = () => {
 
   const handleDelete = async () => {
     if (!deleteItem) return;
+    const name = deleteItem.nameVi;
     try {
       await categoryApi.delete(deleteItem.id);
       setDelete(null);
       reload();
+      toast.success(`Đã xóa danh mục "${name}"`);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Không xóa được danh mục');
+      toast.error(err instanceof Error ? err.message : 'Không xóa được danh mục');
     }
   };
 
@@ -106,12 +112,6 @@ export const Categories = () => {
             {loading ? 'Đang tải...' : `${filtered.length} / ${items.length}`}
           </span>
         </div>
-
-        {error && (
-          <div className="adm-alert adm-alert-error" style={{ margin: '0 1rem 1rem' }}>
-            ⚠️ {error}
-          </div>
-        )}
 
         <div className="adm-table-wrap">
           <table className="adm-table">

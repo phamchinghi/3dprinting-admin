@@ -3,6 +3,7 @@ import { formatPrice } from '../data/mock';
 import { Modal } from '../components/Modal';
 import { orderApi, type AdminOrder, type ApiOrderStatus } from '../api/order';
 import { ApiError } from '../api/client';
+import { useToast } from '../context/ToastContext';
 
 const PAGE_SIZE = 20;
 
@@ -33,14 +34,14 @@ export const Orders = () => {
   const [filterStatus, setFilterStatus] = useState<'all' | ApiOrderStatus>('all');
 
   const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState<string | null>(null);
+  const toast = useToast();
 
   const [viewItem, setViewItem] = useState<AdminOrder | null>(null);
   const [deleteItem, setDeleteItem] = useState<AdminOrder | null>(null);
   const [busy, setBusy]         = useState(false);
 
   const reload = () => {
-    setLoading(true); setError(null);
+    setLoading(true);
     orderApi.list({
       page, size: PAGE_SIZE,
       status: filterStatus === 'all' ? undefined : filterStatus,
@@ -51,7 +52,7 @@ export const Orders = () => {
         setTotalPages(Math.max(1, res.totalPages));
       })
       .catch((err) => {
-        setError(err instanceof ApiError ? err.message : 'Không tải được danh sách đơn');
+        toast.error(err instanceof ApiError ? err.message : 'Không tải được danh sách đơn');
         setItems([]); setTotalElements(0); setTotalPages(1);
       })
       .finally(() => setLoading(false));
@@ -68,13 +69,14 @@ export const Orders = () => {
   });
 
   const handleStatusChange = async (id: string, status: ApiOrderStatus) => {
-    setBusy(true); setError(null);
+    setBusy(true);
     try {
       const updated = await orderApi.updateStatus(id, status);
       setItems((prev) => prev.map((o) => o.id === id ? updated : o));
       if (viewItem?.id === id) setViewItem(updated);
+      toast.success(`Đơn ${updated.orderNumber} → ${STATUS_LABEL[status]}`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Cập nhật trạng thái thất bại');
+      toast.error(err instanceof ApiError ? err.message : 'Cập nhật trạng thái thất bại');
     } finally {
       setBusy(false);
     }
@@ -82,14 +84,16 @@ export const Orders = () => {
 
   const handleDelete = async () => {
     if (!deleteItem) return;
-    setBusy(true); setError(null);
+    const num = deleteItem.orderNumber;
+    setBusy(true);
     try {
       await orderApi.delete(deleteItem.id);
       setDeleteItem(null);
+      toast.success(`Đã xóa đơn ${num}`);
       if (items.length === 1 && page > 1) setPage((p) => p - 1);
       else reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Xóa đơn thất bại');
+      toast.error(err instanceof ApiError ? err.message : 'Xóa đơn thất bại');
     } finally {
       setBusy(false);
     }
@@ -103,8 +107,6 @@ export const Orders = () => {
           <p className="adm-page-sub">{totalElements} đơn từ DB · Cập nhật trạng thái real-time</p>
         </div>
       </div>
-
-      {error && <div className="adm-alert adm-alert-error" style={{ marginBottom: '1rem' }}>⚠️ {error}</div>}
 
       <div className="adm-card">
         <div className="adm-toolbar">

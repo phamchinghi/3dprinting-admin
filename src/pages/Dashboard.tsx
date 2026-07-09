@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatPrice } from '../data/mock';
-import { adminUserApi } from '../api/adminUser';
 import { productApi, type AdminProduct } from '../api/product';
-import { orderApi, type AdminOrder, type ApiOrderStatus, type ApiPaymentMethod } from '../api/order';
+import type { AdminOrder, ApiOrderStatus, ApiPaymentMethod } from '../api/order';
+import { dashboardApi, type DashboardStats, type OrdersByStatus } from '../api/dashboard';
 
 const STATUS_LABEL: Record<ApiOrderStatus, string> = {
   PENDING: 'Chờ xác nhận', CONFIRMED: 'Đã xác nhận',
@@ -16,43 +16,38 @@ const STATUS_CLS: Record<ApiOrderStatus, string> = {
   CANCELLED: 'badge-danger',
 };
 const PAY_LABEL: Record<ApiPaymentMethod, string> = { COD: 'COD', BANK: 'Chuyển khoản', EWALLET: 'Ví điện tử' };
+const STATUS_ORDER: ApiOrderStatus[] = ['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'];
 
 export const Dashboard = () => {
-  const [userTotal, setUserTotal]       = useState<number | null>(null);
-  const [productTotal, setProductTotal] = useState<number | null>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [recent, setRecent] = useState<AdminOrder[]>([]);
+  const [byStatus, setByStatus] = useState<OrdersByStatus | null>(null);
   const [productSample, setProductSample] = useState<AdminProduct[]>([]);
-  const [orderTotal, setOrderTotal]     = useState<number | null>(null);
-  const [orderSample, setOrderSample]   = useState<AdminOrder[]>([]);
 
+  // 3 endpoints dashboard mới (P1-8) + 1 product fetch để vẫn build chart "Sản phẩm theo danh mục"
+  // (BE P1-8 chỉ aggregate count, không expose breakdown theo category — giữ FE-side aggregate).
   useEffect(() => {
     let cancelled = false;
-    adminUserApi.list({ page: 1, size: 1 })
-      .then((res) => { if (!cancelled) setUserTotal(res.totalElements); })
-      .catch(() => { if (!cancelled) setUserTotal(0); });
+    Promise.all([
+      dashboardApi.stats(),
+      dashboardApi.recentOrders(5),
+      dashboardApi.ordersByStatus(),
+    ])
+      .then(([s, r, bs]) => {
+        if (cancelled) return;
+        setStats(s); setRecent(r); setByStatus(bs);
+      })
+      .catch(() => { if (!cancelled) { setStats(null); setRecent([]); setByStatus(null); } });
+
     productApi.list({ page: 1, size: 100 })
-      .then((res) => {
-        if (cancelled) return;
-        setProductTotal(res.totalElements);
-        setProductSample(res.items);
-      })
-      .catch(() => { if (!cancelled) { setProductTotal(0); setProductSample([]); } });
-    // Orders: lấy size=100 để cover revenue + recent + status breakdown
-    orderApi.list({ page: 1, size: 100 })
-      .then((res) => {
-        if (cancelled) return;
-        setOrderTotal(res.totalElements);
-        setOrderSample(res.items);
-      })
-      .catch(() => { if (!cancelled) { setOrderTotal(0); setOrderSample([]); } });
+      .then((res) => { if (!cancelled) setProductSample(res.items); })
+      .catch(() => { if (!cancelled) setProductSample([]); });
+
     return () => { cancelled = true; };
   }, []);
 
-  // Doanh thu chỉ tính những đơn không bị CANCELLED
-  const revenue = orderSample
-    .filter((o) => o.status !== 'CANCELLED')
-    .reduce((s, o) => s + o.total, 0);
-  const pending = orderSample.filter((o) => o.status === 'PENDING').length;
-  const recentOrders = orderSample.slice(0, 5);
+  // Doanh thu pay-method breakdown: BE chưa expose riêng → vẫn aggregate từ recent (5 mẫu, đủ cho overview)
+  const recentByPayment = (m: ApiPaymentMethod) => recent.filter((o) => o.paymentMethod === m).length;
 
   const categoryCounts = productSample.reduce<Record<string, number>>((acc, p) => {
     acc[p.categoryNameVi] = (acc[p.categoryNameVi] ?? 0) + 1;
@@ -68,7 +63,7 @@ export const Dashboard = () => {
           <div className="stat-icon">📦</div>
           <div className="stat-body">
             <p className="stat-label">Tổng sản phẩm</p>
-            <p className="stat-value">{productTotal ?? '—'}</p>
+            <p className="stat-value">{stats?.totalProducts ?? '—'}</p>
             <p className="stat-sub">{Object.keys(categoryCounts).length} danh mục (DB thật)</p>
           </div>
         </div>
@@ -76,15 +71,15 @@ export const Dashboard = () => {
           <div className="stat-icon">🛍️</div>
           <div className="stat-body">
             <p className="stat-label">Đơn chờ xử lý</p>
-            <p className="stat-value">{pending}</p>
-            <p className="stat-sub">{orderTotal ?? '—'} tổng đơn</p>
+            <p className="stat-value">{stats?.pendingOrders ?? '—'}</p>
+            <p className="stat-sub">{stats?.totalOrders ?? '—'} tổng đơn</p>
           </div>
         </div>
         <div className="adm-stat-card" style={{ '--accent': '#2faa6b' } as React.CSSProperties}>
           <div className="stat-icon">👥</div>
           <div className="stat-body">
             <p className="stat-label">Người dùng</p>
-            <p className="stat-value">{userTotal ?? '—'}</p>
+            <p className="stat-value">{stats?.totalUsers ?? '—'}</p>
             <p className="stat-sub">Tổng đăng ký (DB thật)</p>
           </div>
         </div>
@@ -92,8 +87,8 @@ export const Dashboard = () => {
           <div className="stat-icon">💰</div>
           <div className="stat-body">
             <p className="stat-label">Doanh thu</p>
-            <p className="stat-value">{orderSample.length > 0 ? formatPrice(revenue) : '—'}</p>
-            <p className="stat-sub">Trừ đơn đã hủy</p>
+            <p className="stat-value">{stats ? formatPrice(stats.totalRevenue) : '—'}</p>
+            <p className="stat-sub">Trừ đơn đã hủy (BE compute)</p>
           </div>
         </div>
       </div>
@@ -105,7 +100,7 @@ export const Dashboard = () => {
             <h3>Đơn hàng gần đây</h3>
             <Link to="/orders" className="adm-link">Xem tất cả →</Link>
           </div>
-          {recentOrders.length === 0 ? (
+          {recent.length === 0 ? (
             <div className="adm-empty">
               <span>📭</span>
               <p>Chưa có đơn hàng nào. Hãy đặt thử trên website chính!</p>
@@ -123,7 +118,7 @@ export const Dashboard = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentOrders.map((o) => (
+                  {recent.map((o) => (
                     <tr key={o.id}>
                       <td><code>{o.orderNumber}</code></td>
                       <td>{o.shipping.firstName} {o.shipping.lastName}</td>
@@ -160,8 +155,8 @@ export const Dashboard = () => {
             <h3>Đơn hàng theo trạng thái</h3>
           </div>
           <div className="adm-status-summary">
-            {(['PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED', 'CANCELLED'] as const).map((s) => {
-              const count = orderSample.filter((o) => o.status === s).length;
+            {STATUS_ORDER.map((s) => {
+              const count = byStatus?.[s] ?? 0;
               return (
                 <div key={s} className="status-row">
                   <span className={`adm-badge ${STATUS_CLS[s]}`}>{STATUS_LABEL[s]}</span>
@@ -170,17 +165,14 @@ export const Dashboard = () => {
               );
             })}
             <div className="status-row" style={{ marginTop: '.5rem', borderTop: '1px solid var(--adm-border)', paddingTop: '.5rem' }}>
-              <span style={{ fontSize: '.85rem', color: 'var(--adm-text-muted)' }}>Thanh toán</span>
+              <span style={{ fontSize: '.85rem', color: 'var(--adm-text-muted)' }}>Thanh toán (5 đơn gần đây)</span>
             </div>
-            {(['COD', 'BANK', 'EWALLET'] as const).map((p) => {
-              const count = orderSample.filter((o) => o.paymentMethod === p).length;
-              return (
-                <div key={p} className="status-row">
-                  <span style={{ fontSize: '.875rem' }}>{PAY_LABEL[p]}</span>
-                  <span className="status-count">{count} đơn</span>
-                </div>
-              );
-            })}
+            {(['COD', 'BANK', 'EWALLET'] as const).map((p) => (
+              <div key={p} className="status-row">
+                <span style={{ fontSize: '.875rem' }}>{PAY_LABEL[p]}</span>
+                <span className="status-count">{recentByPayment(p)} đơn</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
