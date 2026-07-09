@@ -8,6 +8,7 @@ import {
   type ApiBlogCategory,
 } from '../api/blog';
 import { ApiError } from '../api/client';
+import { useToast } from '../context/ToastContext';
 
 const PAGE_SIZE = 20;
 const SLUG_RE = /^[a-z0-9-]+$/;
@@ -38,7 +39,7 @@ export const Blog = () => {
   const [categories, setCategories] = useState<ApiBlogCategory[]>([]);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const toast = useToast();
 
   const [deleteItem, setDeleteItem] = useState<AdminBlogPost | null>(null);
   const [busy, setBusy] = useState(false);
@@ -52,7 +53,7 @@ export const Blog = () => {
   }, []);
 
   const reload = () => {
-    setLoading(true); setError(null);
+    setLoading(true);
     const isPublished = filterPublished === 'all' ? undefined : filterPublished === 'true';
     blogApi.list({ page, size: PAGE_SIZE, isPublished })
       .then((res) => {
@@ -61,7 +62,7 @@ export const Blog = () => {
         setTotalPages(Math.max(1, res.totalPages));
       })
       .catch((err) => {
-        setError(err instanceof ApiError ? err.message : 'Không tải được danh sách bài viết');
+        toast.error(err instanceof ApiError ? err.message : 'Không tải được danh sách bài viết');
         setItems([]); setTotalElements(0); setTotalPages(1);
       })
       .finally(() => setLoading(false));
@@ -77,12 +78,13 @@ export const Blog = () => {
   });
 
   const handleTogglePublish = async (p: AdminBlogPost) => {
-    setBusy(true); setError(null);
+    setBusy(true);
     try {
       const updated = await blogApi.setPublish(p.id, !p.isPublished);
       setItems((prev) => prev.map((it) => it.id === p.id ? updated : it));
+      toast.success(updated.isPublished ? `Đã publish "${updated.title}"` : `Đã unpublish "${updated.title}"`);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Đổi trạng thái publish thất bại');
+      toast.error(err instanceof ApiError ? err.message : 'Đổi trạng thái publish thất bại');
     } finally {
       setBusy(false);
     }
@@ -90,14 +92,16 @@ export const Blog = () => {
 
   const handleDelete = async () => {
     if (!deleteItem) return;
-    setBusy(true); setError(null);
+    const title = deleteItem.title;
+    setBusy(true);
     try {
       await blogApi.delete(deleteItem.id);
       setDeleteItem(null);
+      toast.success(`Đã xóa "${title}"`);
       if (items.length === 1 && page > 1) setPage((p) => p - 1);
       else reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Xóa bài thất bại');
+      toast.error(err instanceof ApiError ? err.message : 'Xóa bài thất bại');
     } finally {
       setBusy(false);
     }
@@ -121,8 +125,11 @@ export const Blog = () => {
       setForm(EMPTY_FORM);
       setPage(1);
       reload();
+      toast.success(`Đã tạo bài viết "${form.title}"`);
     } catch (err) {
-      setFormError(err instanceof ApiError ? err.message : 'Tạo bài thất bại');
+      const msg = err instanceof ApiError ? err.message : 'Tạo bài thất bại';
+      setFormError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -139,8 +146,6 @@ export const Blog = () => {
           + Thêm bài viết
         </button>
       </div>
-
-      {error && <div className="adm-alert adm-alert-error" style={{ marginBottom: '1rem' }}>⚠️ {error}</div>}
 
       <div className="adm-card">
         <div className="adm-toolbar">

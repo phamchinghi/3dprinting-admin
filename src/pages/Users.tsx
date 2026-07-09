@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Modal } from '../components/Modal';
 import { adminUserApi, type AdminUserProfile, type UserProvider } from '../api/adminUser';
+import { useToast } from '../context/ToastContext';
 
 const PROVIDER_LABEL: Record<UserProvider, string> = {
   GOOGLE:   '🔵 Google',
@@ -17,7 +18,7 @@ export const Users = () => {
   const [users, setUsers]       = useState<AdminUserProfile[]>([]);
   const [total, setTotal]       = useState(0);
   const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState<string | null>(null);
+  const toast = useToast();
   const [search, setSearch]     = useState('');
   const [debounced, setDebounced] = useState('');
   const [page, setPage]         = useState(1);
@@ -34,19 +35,18 @@ export const Users = () => {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
       const res = await adminUserApi.list({ page, size: PAGE_SIZE, search: debounced || undefined });
       setUsers(res.items);
       setTotal(res.totalElements);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không tải được danh sách người dùng');
+      toast.error(err instanceof Error ? err.message : 'Không tải được danh sách người dùng');
       setUsers([]);
       setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [page, debounced]);
+  }, [page, debounced, toast]);
 
   useEffect(() => { reload(); }, [reload]);
 
@@ -57,19 +57,22 @@ export const Users = () => {
     try {
       const updated = await adminUserApi.updateStatus(u.id, { status: next });
       setUsers((prev) => prev.map((x) => (x.id === u.id ? updated : x)));
+      toast.success(`${updated.name} → ${next === 'ACTIVE' ? 'Đang hoạt động' : 'Đã chặn'}`);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Không cập nhật được trạng thái');
+      toast.error(err instanceof Error ? err.message : 'Không cập nhật được trạng thái');
     }
   };
 
   const handleDelete = async () => {
     if (!deleteItem) return;
+    const name = deleteItem.name;
     try {
       await adminUserApi.delete(deleteItem.id);
       setDelete(null);
       reload();
+      toast.success(`Đã xóa người dùng "${name}"`);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Không xóa được người dùng');
+      toast.error(err instanceof Error ? err.message : 'Không xóa được người dùng');
     }
   };
 
@@ -96,12 +99,6 @@ export const Users = () => {
             {loading ? 'Đang tải...' : `Trang ${page} · ${users.length} / ${total}`}
           </span>
         </div>
-
-        {error && (
-          <div className="adm-alert adm-alert-error" style={{ margin: '0 1rem 1rem' }}>
-            ⚠️ {error}
-          </div>
-        )}
 
         <div className="adm-table-wrap">
           <table className="adm-table">

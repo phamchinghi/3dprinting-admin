@@ -15,7 +15,6 @@ export interface AdminProduct {
   categoryNameEn: string;
   price: number;
   oldPrice: number | null;
-  emoji: string;
   badge: ProductBadge | null;
   description: string;
   longDescription: string | null;
@@ -24,6 +23,7 @@ export interface AdminProduct {
   inStock: boolean;
   rating: string;            // BigDecimal serialized as string
   reviewCount: number;
+  images: string[];          // ordered list of image URLs
   videoUrl: string | null;
   isActive: boolean;
   tags: string[];
@@ -47,13 +47,13 @@ export interface CreateProductRequest {
   categoryId: string;
   price: number;
   oldPrice?: number;
-  emoji?: string;
   badge?: ProductBadge;
   description?: string;
   longDescription?: string;
   material?: string;
   dimensions?: string;
   inStock?: boolean;
+  images?: string[];
   videoUrl?: string;
   isActive?: boolean;
 }
@@ -64,13 +64,13 @@ export interface UpdateProductRequest {
   categoryId?: string;
   price?: number;
   oldPrice?: number | null;
-  emoji?: string;
   badge?: ProductBadge | null;
   description?: string;
   longDescription?: string;
   material?: string;
   dimensions?: string;
   inStock?: boolean;
+  images?: string[];        // null=skip, []=clear, [...]=replace
   videoUrl?: string;
   isActive?: boolean;
 }

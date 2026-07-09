@@ -10,6 +10,7 @@ import {
 import { categoryApi, type Category } from '../api/category';
 import { uploadApi, UPLOAD_LIMITS } from '../api/upload';
 import { ApiError } from '../api/client';
+import { useToast } from '../context/ToastContext';
 
 export const ProductEdit = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -21,16 +22,18 @@ export const ProductEdit = () => {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [tagBusy, setTagBusy]   = useState<string | null>(null); // tag name in flight
+  const [imageUploading, setImageUploading] = useState(false);
   const [videoUploading, setVideoUploading] = useState(false);
+  const toast = useToast();
 
   // Load product + categories
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
-    setLoading(true); setError(null);
+    setLoading(true); setLoadFailed(false);
     Promise.all([productApi.getBySlug(slug), categoryApi.list()])
       .then(([p, cats]) => {
         if (cancelled) return;
@@ -40,18 +43,19 @@ export const ProductEdit = () => {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof ApiError ? err.message : 'Không tải được sản phẩm');
+        setLoadFailed(true);
+        toast.error(err instanceof ApiError ? err.message : 'Không tải được sản phẩm');
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [slug]);
+  }, [slug, toast]);
 
   if (loading) return <p className="adm-muted">⏳ Đang tải...</p>;
 
   if (!form || !original) {
     return (
       <div>
-        <p className="adm-muted" style={{ marginBottom: '1rem' }}>{error ?? 'Không tìm thấy sản phẩm.'}</p>
+        <p className="adm-muted" style={{ marginBottom: '1rem' }}>{loadFailed ? 'Không tải được sản phẩm.' : 'Không tìm thấy sản phẩm.'}</p>
         <button className="adm-btn adm-btn-ghost" onClick={() => navigate('/products')}>← Quay lại</button>
       </div>
     );
@@ -67,13 +71,13 @@ export const ProductEdit = () => {
     if (form.categoryId !== original.categoryId)     patch.categoryId = form.categoryId;
     if (form.price !== original.price)               patch.price = form.price;
     if (form.oldPrice !== original.oldPrice)         patch.oldPrice = form.oldPrice;
-    if (form.emoji !== original.emoji)               patch.emoji = form.emoji;
     if (form.badge !== original.badge)               patch.badge = form.badge;
     if (form.description !== original.description)   patch.description = form.description;
     if (form.longDescription !== original.longDescription) patch.longDescription = form.longDescription ?? '';
     if (form.material !== original.material)         patch.material = form.material ?? '';
     if (form.dimensions !== original.dimensions)     patch.dimensions = form.dimensions ?? '';
     if (form.inStock !== original.inStock)           patch.inStock = form.inStock;
+    if (JSON.stringify(form.images) !== JSON.stringify(original.images)) patch.images = form.images;
     if (form.videoUrl !== original.videoUrl)         patch.videoUrl = form.videoUrl ?? '';
     if (form.isActive !== original.isActive)         patch.isActive = form.isActive;
     return patch;
@@ -85,14 +89,15 @@ export const ProductEdit = () => {
       navigate('/products');
       return;
     }
-    setSaving(true); setError(null);
+    setSaving(true);
     try {
       const updated = await productApi.update(form.id, patch);
       setOriginal(updated);
       setForm(updated);
+      toast.success('Đã lưu thay đổi');
       navigate('/products');
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Lưu thất bại');
+      toast.error(e instanceof ApiError ? e.message : 'Lưu thất bại');
     } finally {
       setSaving(false);
     }
@@ -101,30 +106,71 @@ export const ProductEdit = () => {
   const handleAddTag = async () => {
     const tag = tagInput.trim();
     if (!tag) return;
-    setTagBusy(tag); setError(null);
+    setTagBusy(tag);
     try {
       const updated = await productApi.addTag(form.id, tag);
       setOriginal(updated);
       setForm((prev) => prev ? { ...prev, tags: updated.tags } : prev);
       setTagInput('');
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Thêm tag thất bại');
+      toast.error(e instanceof ApiError ? e.message : 'Thêm tag thất bại');
     } finally {
       setTagBusy(null);
     }
   };
 
   const handleDeleteTag = async (tag: string) => {
-    setTagBusy(tag); setError(null);
+    setTagBusy(tag);
     try {
       const updated = await productApi.deleteTag(form.id, tag);
       setOriginal(updated);
       setForm((prev) => prev ? { ...prev, tags: updated.tags } : prev);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Xóa tag thất bại');
+      toast.error(e instanceof ApiError ? e.message : 'Xóa tag thất bại');
     } finally {
       setTagBusy(null);
     }
+  };
+
+  const handleImagesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (files.length === 0) return;
+    const oversize = files.find((f) => f.size > UPLOAD_LIMITS.image.maxBytes);
+    if (oversize) {
+      toast.warning(`File "${oversize.name}" vượt giới hạn ${UPLOAD_LIMITS.image.maxLabel}`);
+      return;
+    }
+    setImageUploading(true);
+    try {
+      const urls: string[] = [];
+      for (const f of files) {
+        const res = await uploadApi.image(f);
+        urls.push(res.url);
+      }
+      // Functional update — append vào prev.images thay vì stale closure form.images
+      setForm((prev) => prev ? { ...prev, images: [...(prev.images ?? []), ...urls] } : prev);
+      toast.success(`Đã thêm ${urls.length} ảnh — nhớ bấm "Lưu thay đổi"`, 'Upload thành công');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Upload ảnh thất bại');
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const removeImageAt = (idx: number) => {
+    setForm((prev) => prev ? { ...prev, images: (prev.images ?? []).filter((_, i) => i !== idx) } : prev);
+  };
+
+  const moveImage = (idx: number, dir: -1 | 1) => {
+    setForm((prev) => {
+      if (!prev) return prev;
+      const arr = [...(prev.images ?? [])];
+      const target = idx + dir;
+      if (target < 0 || target >= arr.length) return prev;
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      return { ...prev, images: arr };
+    });
   };
 
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -133,19 +179,23 @@ export const ProductEdit = () => {
     if (!file) return;
     // Client-side size check trước khi gửi (BE cũng check, đây là UX sớm)
     if (file.size > UPLOAD_LIMITS.video.maxBytes) {
-      setError(`Video vượt giới hạn ${UPLOAD_LIMITS.video.maxLabel}`);
+      toast.warning(`Video vượt giới hạn ${UPLOAD_LIMITS.video.maxLabel}`);
       return;
     }
-    setVideoUploading(true); setError(null);
+    setVideoUploading(true);
     try {
       const res = await uploadApi.video(file);
       set('videoUrl', res.url);
+      toast.success('Đã upload video');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Upload video thất bại');
+      toast.error(err instanceof ApiError ? err.message : 'Upload video thất bại');
     } finally {
       setVideoUploading(false);
     }
   };
+
+  // Detect unsaved changes — bao nhiêu field khác `original`
+  const isDirty = Object.keys(buildPatch()).length > 0;
 
   return (
     <div>
@@ -153,16 +203,33 @@ export const ProductEdit = () => {
         <div className="adm-edit-back-title">
           <button className="adm-btn adm-btn-ghost adm-btn-sm" onClick={() => navigate('/products')}>← Quay lại</button>
           <div>
-            <h2>Chỉnh sửa sản phẩm</h2>
+            <h2>
+              Chỉnh sửa sản phẩm
+              {isDirty && (
+                <span style={{
+                  marginLeft: '.6rem',
+                  fontSize: '.75rem',
+                  fontWeight: 600,
+                  padding: '.2rem .55rem',
+                  borderRadius: 999,
+                  background: '#f59e0b',
+                  color: '#fff',
+                  verticalAlign: 'middle',
+                }}>● Chưa lưu</span>
+              )}
+            </h2>
             <p className="adm-page-sub">{original.name}</p>
           </div>
         </div>
-        <button className="adm-btn adm-btn-primary" onClick={handleSave} disabled={saving}>
-          {saving ? 'Đang lưu...' : '💾 Lưu thay đổi'}
+        <button
+          className="adm-btn adm-btn-primary"
+          onClick={handleSave}
+          disabled={saving}
+          style={isDirty ? { boxShadow: '0 0 0 3px rgba(245, 158, 11, .35)' } : undefined}
+        >
+          {saving ? 'Đang lưu...' : isDirty ? '💾 Lưu thay đổi *' : '💾 Lưu thay đổi'}
         </button>
       </div>
-
-      {error && <div className="adm-alert adm-alert-error" style={{ marginBottom: '1rem' }}>⚠️ {error}</div>}
 
       <div className="adm-edit-grid">
         <div className="adm-edit-main">
@@ -171,13 +238,9 @@ export const ProductEdit = () => {
             <div className="adm-card-header"><h3>Thông tin cơ bản</h3></div>
             <div className="adm-edit-form-body">
               <div className="adm-form-grid">
-                <div className="adm-form-field">
+                <div className="adm-form-field full">
                   <label>Slug <span className="adm-muted adm-small">(không sửa được — BE từ chối)</span></label>
                   <input className="adm-input-readonly" value={form.slug} readOnly />
-                </div>
-                <div className="adm-form-field">
-                  <label>Emoji</label>
-                  <input value={form.emoji} onChange={(e) => set('emoji', e.target.value)} />
                 </div>
                 <div className="adm-form-field full">
                   <label>Tên sản phẩm *</label>
@@ -294,6 +357,71 @@ export const ProductEdit = () => {
                   />
                 </div>
                 <div className="adm-form-field full">
+                  <label>
+                    Ảnh sản phẩm <span className="adm-muted adm-small">(nhiều ảnh, ảnh đầu là ảnh chính · jpeg/png/gif/webp ≤ {UPLOAD_LIMITS.image.maxLabel}/ảnh)</span>
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.75rem', marginBottom: '.75rem' }}>
+                    {(form.images ?? []).map((url, idx) => (
+                      <div
+                        key={`${url}-${idx}`}
+                        style={{
+                          position: 'relative',
+                          width: 140,
+                          height: 140,
+                          borderRadius: 6,
+                          overflow: 'hidden',
+                          border: idx === 0 ? '2px solid var(--adm-primary, #34526F)' : '1px solid var(--adm-border)',
+                          background: '#000',
+                        }}
+                      >
+                        <img src={url} alt={`#${idx + 1}`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        {idx === 0 && (
+                          <span style={{
+                            position: 'absolute', top: 4, left: 4, padding: '2px 6px', fontSize: 10,
+                            background: 'var(--adm-primary, #34526F)', color: '#fff', borderRadius: 4, fontWeight: 700,
+                          }}>CHÍNH</span>
+                        )}
+                        <div style={{ position: 'absolute', bottom: 4, left: 4, right: 4, display: 'flex', gap: 4, justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', gap: 2 }}>
+                            <button type="button" className="adm-btn adm-btn-sm adm-btn-ghost"
+                              onClick={() => moveImage(idx, -1)} disabled={idx === 0}
+                              style={{ padding: '2px 6px', fontSize: 11, lineHeight: 1, background: 'rgba(255,255,255,.85)' }}
+                              title="Lên trước">◀</button>
+                            <button type="button" className="adm-btn adm-btn-sm adm-btn-ghost"
+                              onClick={() => moveImage(idx, 1)} disabled={idx === (form.images?.length ?? 0) - 1}
+                              style={{ padding: '2px 6px', fontSize: 11, lineHeight: 1, background: 'rgba(255,255,255,.85)' }}
+                              title="Lùi sau">▶</button>
+                          </div>
+                          <button type="button" className="adm-btn adm-btn-sm adm-btn-danger-ghost"
+                            onClick={() => removeImageAt(idx)}
+                            style={{ padding: '2px 6px', fontSize: 11, lineHeight: 1, background: 'rgba(255,255,255,.85)' }}
+                            title="Xóa">✕</button>
+                        </div>
+                      </div>
+                    ))}
+                    <label
+                      className="adm-btn adm-btn-ghost"
+                      style={{
+                        width: 140, height: 140, display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center', gap: 4,
+                        border: '2px dashed var(--adm-border)', borderRadius: 6,
+                        cursor: imageUploading ? 'wait' : 'pointer',
+                      }}
+                    >
+                      <span style={{ fontSize: 24 }}>{imageUploading ? '⏳' : '📤'}</span>
+                      <span className="adm-small">{imageUploading ? 'Đang upload...' : 'Thêm ảnh'}</span>
+                      <input
+                        type="file"
+                        accept={UPLOAD_LIMITS.image.accept}
+                        multiple
+                        hidden
+                        disabled={imageUploading}
+                        onChange={handleImagesUpload}
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div className="adm-form-field full">
                   <label>Video URL <span className="adm-muted adm-small">(hoặc upload mp4/webm ≤ {UPLOAD_LIMITS.video.maxLabel})</span></label>
                   <div style={{ display: 'flex', gap: '.5rem', alignItems: 'center' }}>
                     <input
@@ -406,7 +534,16 @@ export const ProductEdit = () => {
           <div className="adm-card adm-edit-preview-card">
             <div className="adm-card-header"><h3>Xem trước</h3></div>
             <div className="adm-edit-preview-body">
-              <span className="adm-edit-preview-emoji">{form.emoji}</span>
+              {form.images && form.images.length > 0 ? (
+                <img
+                  src={form.images[0]}
+                  alt={form.name}
+                  className="adm-edit-preview-image"
+                  style={{ width: '100%', maxWidth: 240, aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, background: '#000' }}
+                />
+              ) : (
+                <span className="adm-edit-preview-emoji">📦</span>
+              )}
               <h4 className="adm-edit-preview-name">{form.name || '—'}</h4>
               <div className="adm-edit-preview-badges">
                 <span className="adm-tag">{form.categoryNameVi}</span>

@@ -5,6 +5,7 @@ import { Modal } from '../components/Modal';
 import { productApi, type AdminProduct, type CreateProductRequest, type ProductBadge } from '../api/product';
 import { categoryApi, type Category } from '../api/category';
 import { ApiError } from '../api/client';
+import { useToast } from '../context/ToastContext';
 
 const PAGE_SIZE = 20;
 const SLUG_RE = /^[a-z0-9-]+$/;
@@ -14,7 +15,6 @@ const EMPTY_FORM: CreateProductRequest = {
   name: '',
   categoryId: '',
   price: 0,
-  emoji: '📦',
   description: '',
   inStock: true,
   isActive: true,
@@ -30,7 +30,7 @@ export const Products = () => {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   const [categories, setCategories] = useState<Category[]>([]);
 
@@ -54,7 +54,7 @@ export const Products = () => {
   }, []);
 
   const reload = () => {
-    setLoading(true); setError(null);
+    setLoading(true);
     const fetcher = debouncedSearch
       ? productApi.search(debouncedSearch, page, PAGE_SIZE)
       : productApi.list({ page, size: PAGE_SIZE });
@@ -65,7 +65,7 @@ export const Products = () => {
         setTotalPages(Math.max(1, res.totalPages));
       })
       .catch((err) => {
-        setError(err instanceof ApiError ? err.message : 'Không tải được danh sách sản phẩm');
+        toast.error(err instanceof ApiError ? err.message : 'Không tải được danh sách sản phẩm');
         setItems([]); setTotalElements(0); setTotalPages(1);
       })
       .finally(() => setLoading(false));
@@ -76,14 +76,15 @@ export const Products = () => {
   const handleDelete = async () => {
     if (!deleteItem) return;
     setDeleting(true);
+    const name = deleteItem.name;
     try {
       await productApi.delete(deleteItem.id);
       setDeleteItem(null);
-      // Nếu xóa hàng cuối của trang cuối → lùi về trang trước
+      toast.success(`Đã xóa sản phẩm "${name}"`);
       if (items.length === 1 && page > 1) setPage((p) => p - 1);
       else reload();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Xóa thất bại');
+      toast.error(err instanceof ApiError ? err.message : 'Xóa thất bại');
     } finally {
       setDeleting(false);
     }
@@ -107,8 +108,11 @@ export const Products = () => {
       setForm(EMPTY_FORM);
       setPage(1);
       reload();
+      toast.success(`Đã thêm sản phẩm "${form.name}"`);
     } catch (e) {
-      setFormError(e instanceof ApiError ? e.message : 'Tạo sản phẩm thất bại');
+      const msg = e instanceof ApiError ? e.message : 'Tạo sản phẩm thất bại';
+      setFormError(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
     }
@@ -125,8 +129,6 @@ export const Products = () => {
           + Thêm sản phẩm
         </button>
       </div>
-
-      {error && <div className="adm-alert adm-alert-error" style={{ marginBottom: '1rem' }}>⚠️ {error}</div>}
 
       <div className="adm-card">
         <div className="adm-toolbar">
@@ -162,7 +164,16 @@ export const Products = () => {
                 <tr key={p.id}>
                   <td>
                     <div className="adm-product-cell">
-                      <span className="adm-emoji">{p.emoji}</span>
+                      {p.images && p.images.length > 0 ? (
+                        <img
+                          src={p.images[0]}
+                          alt={p.name}
+                          className="adm-product-thumb"
+                          style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6 }}
+                        />
+                      ) : (
+                        <span className="adm-emoji">📦</span>
+                      )}
                       <div>
                         <strong>{p.name}</strong>
                         {p.badge && (
@@ -259,14 +270,6 @@ export const Products = () => {
               value={form.slug}
               onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
               placeholder="product-slug-vi-du"
-            />
-          </div>
-          <div className="adm-form-field">
-            <label>Emoji</label>
-            <input
-              value={form.emoji ?? ''}
-              onChange={(e) => setForm((f) => ({ ...f, emoji: e.target.value }))}
-              placeholder="📦"
             />
           </div>
           <div className="adm-form-field full">

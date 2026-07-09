@@ -7,6 +7,7 @@ import {
   type UpdateBlogPostRequest,
 } from '../api/blog';
 import { ApiError } from '../api/client';
+import { useToast } from '../context/ToastContext';
 
 export const BlogEdit = () => {
   const { id } = useParams<{ id: string }>();
@@ -18,13 +19,14 @@ export const BlogEdit = () => {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [publishBusy, setPublishBusy] = useState(false);
+  const toast = useToast();
 
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    setLoading(true); setError(null);
+    setLoading(true); setLoadFailed(false);
     Promise.all([blogApi.getById(id), blogApi.listCategories()])
       .then(([p, cats]) => {
         if (cancelled) return;
@@ -34,18 +36,19 @@ export const BlogEdit = () => {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(err instanceof ApiError ? err.message : 'Không tải được bài viết');
+        setLoadFailed(true);
+        toast.error(err instanceof ApiError ? err.message : 'Không tải được bài viết');
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, toast]);
 
   if (loading) return <p className="adm-muted">⏳ Đang tải...</p>;
 
   if (!form || !original) {
     return (
       <div>
-        <p className="adm-muted" style={{ marginBottom: '1rem' }}>{error ?? 'Không tìm thấy bài viết.'}</p>
+        <p className="adm-muted" style={{ marginBottom: '1rem' }}>{loadFailed ? 'Không tải được bài viết.' : 'Không tìm thấy bài viết.'}</p>
         <button className="adm-btn adm-btn-ghost" onClick={() => navigate('/blog')}>← Quay lại</button>
       </div>
     );
@@ -68,27 +71,29 @@ export const BlogEdit = () => {
   const handleSave = async () => {
     const patch = buildPatch();
     if (Object.keys(patch).length === 0) { navigate('/blog'); return; }
-    setSaving(true); setError(null);
+    setSaving(true);
     try {
       const updated = await blogApi.update(form.id, patch);
       setOriginal(updated);
       setForm(updated);
+      toast.success('Đã lưu thay đổi');
       navigate('/blog');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Lưu thất bại');
+      toast.error(err instanceof ApiError ? err.message : 'Lưu thất bại');
     } finally {
       setSaving(false);
     }
   };
 
   const handleTogglePublish = async () => {
-    setPublishBusy(true); setError(null);
+    setPublishBusy(true);
     try {
       const updated = await blogApi.setPublish(form.id, !form.isPublished);
       setOriginal(updated);
       setForm(updated);
+      toast.success(updated.isPublished ? 'Đã publish bài viết' : 'Đã unpublish bài viết');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Đổi trạng thái publish thất bại');
+      toast.error(err instanceof ApiError ? err.message : 'Đổi trạng thái publish thất bại');
     } finally {
       setPublishBusy(false);
     }
@@ -117,8 +122,6 @@ export const BlogEdit = () => {
           </button>
         </div>
       </div>
-
-      {error && <div className="adm-alert adm-alert-error" style={{ marginBottom: '1rem' }}>⚠️ {error}</div>}
 
       <div className="adm-edit-grid">
         <div className="adm-edit-main">
