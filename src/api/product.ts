@@ -1,10 +1,10 @@
 import { api } from './client';
 
-// BE enums (UPPERCASE) — mirror com.tini3d.common.enums.ProductBadge
+// BE enums (UPPERCASE) — mirror com.tuni3d.common.enums.ProductBadge
 export type ProductBadge = 'NEW' | 'HOT' | 'SALE';
 export type ProductSort  = 'price_asc' | 'price_desc' | 'rating_desc' | 'created_desc';
 
-// Mirrors com.tini3d.module.product.dto.ProductResponse
+// Mirrors com.tuni3d.module.product.dto.ProductResponse
 export interface AdminProduct {
   id: string;
   slug: string;
@@ -30,7 +30,7 @@ export interface AdminProduct {
   createdAt: string;
 }
 
-// Mirrors com.tini3d.common.response.PageResponse — BE uses `items` (NOT `content`)
+// Mirrors com.tuni3d.common.response.PageResponse — BE uses `items` (NOT `content`)
 export interface PageResponse<T> {
   items: T[];
   page: number;              // 1-based
@@ -39,7 +39,7 @@ export interface PageResponse<T> {
   totalPages: number;
 }
 
-// Mirrors com.tini3d.module.product.dto.CreateProductRequest
+// Mirrors com.tuni3d.module.product.dto.CreateProductRequest
 // BE validates: slug ^[a-z0-9-]+$ · name NotBlank · categoryId NotNull · price Positive
 export interface CreateProductRequest {
   slug: string;

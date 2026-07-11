@@ -29,7 +29,7 @@ export const Sidebar = ({ collapsed }: SidebarProps) => {
         <span className="brand-icon">🖨️</span>
         {!collapsed && (
           <span className="brand-name">
-            <span className="brand-tini">TiNi</span> Admin
+            <span className="brand-tuni">TuNi</span> Admin
           </span>
         )}
       </div>

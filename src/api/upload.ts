@@ -9,7 +9,7 @@ import {
   type AuthData,
 } from './client';
 
-// Mirrors com.tini3d.module.upload.dto.UploadResponse
+// Mirrors com.tuni3d.module.upload.dto.UploadResponse
 export interface UploadResponse {
   url: string;            // public URL — lưu thẳng vào product.videoUrl / blog
   objectKey: string;      // key trong bucket — dùng để gọi DELETE

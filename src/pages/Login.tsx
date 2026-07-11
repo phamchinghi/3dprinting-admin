@@ -26,9 +26,9 @@ export const Login = () => {
         <div className="adm-login-brand">
           <span className="brand-icon-lg">🖨️</span>
           <h1>
-            <span className="brand-tini">TiNi</span> 3D Admin
+            <span className="brand-tuni">TuNi</span> 3D Admin
           </h1>
-          <p>Quản trị hệ thống TiNi 3D Store</p>
+          <p>Quản trị hệ thống TuNi 3D Store</p>
         </div>
 
         <form onSubmit={handleSubmit} className="adm-login-form">

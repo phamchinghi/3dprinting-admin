@@ -132,7 +132,7 @@ export const Orders = () => {
         ) : totalElements === 0 ? (
           <div className="adm-empty">
             <span>📭</span>
-            <p>Chưa có đơn hàng. Thử đặt hàng trên website TiNi 3D Store trước!</p>
+            <p>Chưa có đơn hàng. Thử đặt hàng trên website TuNi 3D Store trước!</p>
           </div>
         ) : (
           <div className="adm-table-wrap">

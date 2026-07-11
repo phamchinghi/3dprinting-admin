@@ -1,13 +1,13 @@
 import { api } from './client';
 
-// Mirrors com.tini3d.module.blog.dto.BlogCategoryResponse
+// Mirrors com.tuni3d.module.blog.dto.BlogCategoryResponse
 export interface ApiBlogCategory {
   id: string;
   slug: string;
   name: string;
 }
 
-// Mirrors com.tini3d.module.blog.dto.BlogPostResponse
+// Mirrors com.tuni3d.module.blog.dto.BlogPostResponse
 export interface AdminBlogPost {
   id: string;
   slug: string;
@@ -26,7 +26,7 @@ export interface AdminBlogPost {
   updatedAt: string;
 }
 
-// Mirrors com.tini3d.common.response.PageResponse — items field
+// Mirrors com.tuni3d.common.response.PageResponse — items field
 export interface PageResponse<T> {
   items: T[];
   page: number;
@@ -35,7 +35,7 @@ export interface PageResponse<T> {
   totalPages: number;
 }
 
-// Mirrors com.tini3d.module.blog.dto.CreateBlogPostRequest — BE validates slug regex ^[a-z0-9-]+$
+// Mirrors com.tuni3d.module.blog.dto.CreateBlogPostRequest — BE validates slug regex ^[a-z0-9-]+$
 export interface CreateBlogPostRequest {
   slug: string;
   title: string;

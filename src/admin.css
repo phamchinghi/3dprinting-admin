@@ -1,5 +1,5 @@
 /* ============================================================
-   TiNi 3D Admin — Global Styles
+   TuNi 3D Admin — Global Styles
    Brand palette: #34526F · #7EAED0 · #A0D4FF · #F6F7EC
    ============================================================ */
 
@@ -69,7 +69,7 @@ h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 700; color: var(
 .brand-icon { font-size: 1.75rem; flex-shrink: 0; }
 .brand-icon-lg { font-size: 3rem; display: block; margin-bottom: .5rem; }
 .brand-name { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: #fff; white-space: nowrap; }
-.brand-tini { color: var(--adm-accent); }
+.brand-tuni { color: var(--adm-accent); }
 
 .adm-sidebar-nav { flex: 1; padding: 1rem .75rem; overflow-y: auto; }
 .adm-nav-section {

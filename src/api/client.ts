@@ -1,5 +1,5 @@
 export const BASE_URL = 'http://localhost:8081';
-const REFRESH_TOKEN_KEY = 'tini-admin-refresh-token';
+const REFRESH_TOKEN_KEY = 'tuni-admin-refresh-token';
 
 let _accessToken: string | null = null;
 

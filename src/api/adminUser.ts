@@ -4,7 +4,7 @@ import { api } from './client';
 export type UserProvider   = 'GOOGLE' | 'FACEBOOK' | 'PHONE' | 'EMAIL';
 export type AccountStatus  = 'ACTIVE' | 'INACTIVE';
 
-// Mirrors com.tini3d.module.user.dto.UserResponse
+// Mirrors com.tuni3d.module.user.dto.UserResponse
 export interface AdminUserProfile {
   id: string;
   name: string;
@@ -17,7 +17,7 @@ export interface AdminUserProfile {
   createdAt: string;            // ISO timestamp
 }
 
-// Mirrors com.tini3d.common.response.PageResponse
+// Mirrors com.tuni3d.common.response.PageResponse
 export interface PageResponse<T> {
   items: T[];
   page: number;                 // 1-based

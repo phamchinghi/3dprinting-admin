@@ -1,6 +1,6 @@
 import { api } from './client';
 
-// Mirrors com.tini3d.module.category.dto.CategoryResponse
+// Mirrors com.tuni3d.module.category.dto.CategoryResponse
 export interface Category {
   id: string;
   slug: string;

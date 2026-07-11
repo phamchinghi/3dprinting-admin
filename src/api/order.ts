@@ -1,10 +1,10 @@
 import { api } from './client';
 
-// BE enums (UPPERCASE) — mirror com.tini3d.common.enums.OrderStatus + PaymentMethod
+// BE enums (UPPERCASE) — mirror com.tuni3d.common.enums.OrderStatus + PaymentMethod
 export type ApiOrderStatus    = 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED';
 export type ApiPaymentMethod  = 'COD' | 'BANK' | 'EWALLET';
 
-// Mirrors com.tini3d.module.order.dto.OrderShippingResponse
+// Mirrors com.tuni3d.module.order.dto.OrderShippingResponse
 export interface ApiOrderShipping {
   firstName: string;
   lastName: string;
@@ -15,7 +15,7 @@ export interface ApiOrderShipping {
   province: string;
 }
 
-// Mirrors com.tini3d.module.order.dto.OrderItemResponse
+// Mirrors com.tuni3d.module.order.dto.OrderItemResponse
 export interface ApiOrderItem {
   id: string;
   productId: string | null;     // null nếu product đã bị xóa
@@ -26,7 +26,7 @@ export interface ApiOrderItem {
   subtotal: number;
 }
 
-// Mirrors com.tini3d.module.order.dto.OrderResponse
+// Mirrors com.tuni3d.module.order.dto.OrderResponse
 export interface AdminOrder {
   id: string;
   orderNumber: string;
@@ -42,7 +42,7 @@ export interface AdminOrder {
   createdAt: string;
 }
 
-// Mirrors com.tini3d.common.response.PageResponse — BE uses `items`
+// Mirrors com.tuni3d.common.response.PageResponse — BE uses `items`
 export interface PageResponse<T> {
   items: T[];
   page: number;

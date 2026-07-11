@@ -1,7 +1,7 @@
 import { api } from './client';
 import type { AdminOrder, ApiOrderStatus } from './order';
 
-// Mirrors com.tini3d.module.dashboard.dto.DashboardStatsResponse
+// Mirrors com.tuni3d.module.dashboard.dto.DashboardStatsResponse
 export interface DashboardStats {
   totalOrders: number;
   pendingOrders: number;

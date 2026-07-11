@@ -12,13 +12,13 @@ interface AdminAuthValue {
   logout: () => void;
 }
 
-const STORAGE_KEY = 'tini-admin-auth'; // legacy key kept for backward compat (stores name only)
+const STORAGE_KEY = 'tuni-admin-auth'; // legacy key kept for backward compat (stores name only)
 
 const AdminAuthContext = createContext<AdminAuthValue | undefined>(undefined);
 
 export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [adminName, setAdminName] = useState('Admin TiNi');
+  const [adminName, setAdminName] = useState('Admin TuNi');
   const [adminRole, setAdminRole] = useState('');
 
   // ── On mount: silent restore session via refresh token ────────────────────
@@ -67,7 +67,7 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
     clearTokens();
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
     setIsAuthenticated(false);
-    setAdminName('Admin TiNi');
+    setAdminName('Admin TuNi');
     setAdminRole('');
   }, []);
 
